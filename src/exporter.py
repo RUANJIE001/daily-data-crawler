@@ -119,9 +119,36 @@ class ExcelExporter:
                 cell.border = thin_border
             ws.row_dimensions[header_row].height = 28
 
+            # 识别关键数据列索引（本期价格、涨跌额、涨跌幅）
+            col_diff_idx = None
+            col_rate_idx = None
+            for c in range(1, max_col + 1):
+                h = str(ws.cell(row=header_row, column=c).value or "")
+                if "涨跌(" in h or "比上期" in h or "价格涨跌" in h:
+                    col_diff_idx = c
+                elif "涨跌幅" in h or "涨跌" in h:
+                    col_rate_idx = c
+
             for row in range(header_row + 1, max_row + 1):
                 ws.row_dimensions[row].height = 20
                 is_alt = (row % 2 == 0)
+
+                # 判断该行的涨跌状态 (1: 涨/红, -1: 跌/绿, 0: 平)
+                trend_status = 0
+                for c_idx in [col_diff_idx, col_rate_idx]:
+                    if c_idx:
+                        try:
+                            v_raw = str(ws.cell(row=row, column=c_idx).value or "").replace(",", "").replace("%", "").strip()
+                            v_num = float(v_raw)
+                            if v_num > 0:
+                                trend_status = 1
+                                break
+                            elif v_num < 0:
+                                trend_status = -1
+                                break
+                        except Exception:
+                            pass
+
                 for col in range(1, max_col + 1):
                     cell = ws.cell(row=row, column=col)
                     cell.font = data_font
@@ -131,6 +158,25 @@ class ExcelExporter:
 
                     col_header = str(ws.cell(row=header_row, column=col).value or "")
                     val_str = str(cell.value or "")
+
+                    # 核心需求：本期价格、涨跌额、涨跌幅 按照 A 股规则「涨标红、跌标绿」
+                    if any(k in col_header for k in ["本期价格", "现价", "价格(元)"]):
+                        if trend_status == 1:
+                            cell.font = up_font
+                        elif trend_status == -1:
+                            cell.font = down_font
+                    elif any(k in col_header for k in ["涨跌", "比上期"]):
+                        try:
+                            v_val = float(val_str.replace(",", "").replace("%", "").strip())
+                            if v_val > 0:
+                                cell.font = up_font
+                            elif v_val < 0:
+                                cell.font = down_font
+                        except Exception:
+                            if trend_status == 1:
+                                cell.font = up_font
+                            elif trend_status == -1:
+                                cell.font = down_font
                     
                     # 文本与名称列必须严格左对齐；单位居中；数值与涨跌右对齐
                     if any(k in col_header for k in ["产品", "商品", "名称", "规格", "型号", "分类", "大类", "提示"]):
