@@ -282,14 +282,29 @@ class ExcelExporter:
         chart_cols = ["B", "N"]
         chart_height_rows = 18
 
+        # 高对比度专业配色库 (D3/Tableau 经典高区分度色系，杜绝单一色系混淆)
+        DISTINCT_COLORS = [
+            "1F77B4",  # 经典深蓝
+            "FF7F0E",  # 活力鲜橙
+            "2CA02C",  # 森林翠绿
+            "D62728",  # 绯红明亮
+            "9467BD",  # 典雅高贵紫
+            "8C564B",  # 暖调棕褐
+            "E377C2",  # 亮丽玫粉
+            "17BECF",  # 科技青天蓝
+            "BCBD22",  # 橄榄金黄
+            "393B79",  # 深邃藏青
+            "E6550D",  # 琥珀深橙
+            "756BB1",  # 薰衣草紫
+        ]
+
         for idx, (cat_name, min_r, max_r) in enumerate(categories):
             chart = LineChart()
             chart.title = f"{cat_name} - 细项价格过去 {len(period_headers)} 期走势 (单位: 元)"
-            chart.style = 13
             chart.width = 19
             chart.height = 10
 
-            # 核心修复：明确指定 X 轴置于底部(bottom)、Y 轴置于左侧(left)
+            # 明确指定 X 轴置于底部(bottom)、Y 轴置于左侧(left)
             chart.x_axis.axPos = "b"
             chart.y_axis.axPos = "l"
             chart.x_axis.tickLblPos = "low"
@@ -306,13 +321,24 @@ class ExcelExporter:
             chart.add_data(data, from_rows=True, titles_from_data=False)
             chart.set_categories(x_values)
 
-            # 使用 SeriesLabel 绑定每条折线的系列标题（openpyxl 规范类型）
+            # 自定义每条折线的独立高区分度色彩与精致细线条
             for s_idx, series in enumerate(chart.series):
                 series_row = min_r + s_idx
                 product_name = str(ws.cell(row=series_row, column=col_product).value or f"商品{s_idx+1}")
                 series.tx = SeriesLabel(v=product_name)
+
+                # 分配高对比度独立颜色
+                color = DISTINCT_COLORS[s_idx % len(DISTINCT_COLORS)]
+
+                # 设置精致细线条 (15000 EMU ≈ 1.2pt)
+                series.graphicalProperties.line.solidFill = color
+                series.graphicalProperties.line.width = 15000
+
+                # 标记点设小，颜色与线条一致
                 series.marker.symbol = "circle"
-                series.marker.size = 4
+                series.marker.size = 3
+                series.marker.graphicalProperties.solidFill = color
+                series.marker.graphicalProperties.line.solidFill = color
                 series.smooth = True
 
             # 计算图表摆放单元格 (双列布局)
