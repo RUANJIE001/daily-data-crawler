@@ -7,7 +7,7 @@ import pandas as pd
 from openpyxl import load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
-from openpyxl.chart import LineChart, Reference, Series
+from openpyxl.chart import LineChart, Reference
 from src.utils import setup_logger, get_beijing_now
 
 logger = setup_logger("Exporter")
@@ -236,14 +236,11 @@ class ExcelExporter:
         if not period_headers:
             return
 
-        # 确定各列的列号 (1-indexed)
-        # 列 1: 分类大类, 列 2: 产品名称, 列 3: 规格, 列 4: 单位
-        # 列 5 ~ (5 + len(period_headers) - 1): 各期价格
         col_product = 2
         col_period_start = 5
         col_period_end = 5 + len(period_headers) - 1
 
-        # X 轴期数引用
+        # X 轴期数引用 (第 4 行的期数表头)
         x_values = Reference(ws, min_col=col_period_start, max_col=col_period_end, min_row=header_row, max_row=header_row)
 
         # 获取所有分类大类及其对应的行区间
@@ -268,8 +265,8 @@ class ExcelExporter:
         logger.info(f"正在生成 {len(categories)} 张大类细项价格走势折线图...")
 
         # 采用双列并排布局放置图表
-        chart_cols = ["B", "N"] # 左列放在 B 列，右列放在 N 列
-        chart_height_rows = 18 # 每张图高度约 18 行
+        chart_cols = ["B", "N"]
+        chart_height_rows = 18
 
         for idx, (cat_name, min_r, max_r) in enumerate(categories):
             chart = LineChart()
@@ -277,21 +274,18 @@ class ExcelExporter:
             chart.style = 13
             chart.y_axis.title = "价格 (元)"
             chart.x_axis.title = "期数"
-            chart.width = 19 # 宽度
-            chart.height = 10 # 高度
+            chart.width = 19
+            chart.height = 10
 
             # 数据引用：该分类下所有商品行的价格数据
             data = Reference(ws, min_col=col_period_start, max_col=col_period_end, min_row=min_r, max_row=max_r)
-            # 商品名称作为各折线的图例名称
-            titles = Reference(ws, min_col=col_product, min_row=min_r, max_row=max_r)
-
             chart.add_data(data, from_rows=True, titles_from_data=False)
             chart.set_categories(x_values)
 
-            # 设置每条折线的系列名称与样式
+            # 使用 Reference 绑定每条折线的系列标题（直接链接到产品名称单元格，符合 openpyxl 规范）
             for s_idx, series in enumerate(chart.series):
                 series_row = min_r + s_idx
-                series.title = ws.cell(row=series_row, column=col_product).value
+                series.title = Reference(ws, min_col=col_product, min_row=series_row)
                 series.marker.symbol = "circle"
                 series.marker.size = 4
                 series.smooth = True
