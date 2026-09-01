@@ -1,5 +1,5 @@
 """
-src/notifier.py - SMTP 邮件发送（带 HTML 摘要与 Excel 附件）
+src/notifier.py - 增强版 SMTP 邮件发送模块（支持 Gmail 自动容灾与智能重试）
 """
 import os
 import smtplib
@@ -14,71 +14,91 @@ logger = setup_logger("Notifier")
 
 class EmailNotifier:
     def __init__(self):
-        self.smtp_host = os.getenv("EMAIL_HOST", "smtp.qq.com")
-        self.smtp_port = int(os.getenv("EMAIL_PORT", "465"))
-        self.smtp_user = os.getenv("EMAIL_USER", "")
-        self.auth_token = os.getenv("EMAIL_AUTH_TOKEN", "")
-        self.receiver = os.getenv("EMAIL_RECEIVER", "181505217@qq.com")
+        self.smtp_host = os.getenv("EMAIL_HOST", "smtp.gmail.com").strip()
+        self.smtp_port = int(os.getenv("EMAIL_PORT", "465").strip() or "465")
+        self.smtp_user = os.getenv("EMAIL_USER", "").strip()
+        # 自动清洗 Google 密码中自带的空格与特殊空白符
+        self.auth_token = os.getenv("EMAIL_AUTH_TOKEN", "").strip().replace(" ", "").replace("\n", "").replace("\r", "")
+        self.receiver = os.getenv("EMAIL_RECEIVER", "181505217@qq.com").strip()
         self.use_ssl = os.getenv("EMAIL_SSL", "true").lower() in ("true", "1", "yes")
 
     def send_report(self, excel_path: str, meta_a: Dict, meta_b: Dict) -> bool:
         """
         发送每日数据监测报表邮件
         """
-        if not self.smtp_user or not self.auth_token:
-            logger.error("未配置 EMAIL_USER 或 EMAIL_AUTH_TOKEN 环境变量，无法发送邮件！")
+        if not self.smtp_user:
+            logger.error("❌ 未检测到 EMAIL_USER 环境变量，请在 GitHub Secrets 中配置！")
             return False
+        if not self.auth_token:
+            logger.error("❌ 未检测到 EMAIL_AUTH_TOKEN 环境变量，请在 GitHub Secrets 中配置！")
+            return False
+
+        logger.info(f"📧 发件人账号: {self.smtp_user}")
+        logger.info(f"📧 收件人账号: {self.receiver}")
+        logger.info(f"📧 授权码长度: {len(self.auth_token)} 位字符")
 
         now_str = get_beijing_now().strftime("%Y-%m-%d %H:%M:%S")
         date_str = get_beijing_now().strftime("%Y%m%d")
         subject = f"【每日数据监测】大宗商品与流通生产资料市场变动日报 ({date_str})"
 
-        # 创建复合邮件对象
         msg = MIMEMultipart("mixed")
         msg["From"] = Header(f"自动化数据机器人 <{self.smtp_user}>", "utf-8")
         msg["To"] = Header(self.receiver, "utf-8")
         msg["Subject"] = Header(subject, "utf-8")
 
-        # 1. 构建 HTML 摘要正文
+        # 1. 摘要 HTML
         html_content = self._render_html_body(now_str, meta_a, meta_b)
         msg.attach(MIMEText(html_content, "html", "utf-8"))
 
-        # 2. 挂载 Excel 附件
+        # 2. 附件
         if os.path.exists(excel_path):
             file_name = os.path.basename(excel_path)
             with open(excel_path, "rb") as f:
                 part = MIMEApplication(f.read(), Name=file_name)
-            # 处理跨平台邮件客户端的中文附件名编码
             part.add_header("Content-Disposition", "attachment", filename=("utf-8", "", file_name))
             msg.attach(part)
         else:
-            logger.warning(f"附件文件不存在: {excel_path}，将只发送正文")
+            logger.warning(f"⚠️ 附件不存在: {excel_path}")
 
-        # 3. 发送邮件
         receivers = [r.strip() for r in self.receiver.split(",") if r.strip()]
-        try:
-            logger.info(f"正在连接 SMTP 服务器 {self.smtp_host}:{self.smtp_port} (SSL: {self.use_ssl})...")
-            if self.use_ssl:
-                with smtplib.SMTP_SSL(self.smtp_host, self.smtp_port, timeout=30) as server:
-                    server.login(self.smtp_user, self.auth_token)
-                    server.sendmail(self.smtp_user, receivers, msg.as_string())
-            else:
-                with smtplib.SMTP(self.smtp_host, self.smtp_port, timeout=30) as server:
-                    server.starttls()
-                    server.login(self.smtp_user, self.auth_token)
-                    server.sendmail(self.smtp_user, receivers, msg.as_string())
-            
-            logger.info(f"邮件成功发送至: {receivers}")
-            return True
 
-        except Exception as e:
-            logger.error(f"邮件发送失败: {e}", exc_info=True)
-            return False
+        # 3. 尝试发送（具备 SSL 与 TLS 自动故障倒换）
+        connection_modes = [
+            (self.smtp_host, self.smtp_port, self.use_ssl),
+            (self.smtp_host, 587 if self.smtp_port == 465 else 465, not self.use_ssl)
+        ]
+
+        for host, port, ssl_mode in connection_modes:
+            try:
+                mode_name = f"SSL(端口 {port})" if ssl_mode else f"STARTTLS(端口 {port})"
+                logger.info(f"正在尝试通过 {host} 以 {mode_name} 模式发送邮件...")
+                
+                if ssl_mode:
+                    with smtplib.SMTP_SSL(host, port, timeout=30) as server:
+                        server.login(self.smtp_user, self.auth_token)
+                        server.sendmail(self.smtp_user, receivers, msg.as_string())
+                else:
+                    with smtplib.SMTP(host, port, timeout=30) as server:
+                        server.ehlo()
+                        server.starttls()
+                        server.ehlo()
+                        server.login(self.smtp_user, self.auth_token)
+                        server.sendmail(self.smtp_user, receivers, msg.as_string())
+
+                logger.info(f"🎉 邮件发送成功！已投递至: {receivers}")
+                return True
+
+            except smtplib.SMTPAuthenticationError as auth_err:
+                logger.error(f"❌ SMTP 认证失败 (账号或应用专用密码错误): {auth_err}")
+                break
+            except Exception as e:
+                logger.warning(f"⚠️ 当前模式连接失败 ({e})，准备尝试备用连接模式...")
+
+        logger.error("❌ 所有 SMTP 连接方式均尝试失败！请检查邮箱配置。")
+        return False
 
     def _render_html_body(self, run_time: str, meta_a: Dict, meta_b: Dict) -> str:
-        """生成美观的响应式 HTML 摘要模版"""
         total_rows = meta_a.get("row_count", 0) + meta_b.get("row_count", 0)
-        
         status_badge_a = '<span style="color:#0f766e; background:#ccfbf1; padding:2px 8px; border-radius:4px; font-weight:bold;">成功</span>' if meta_a.get("status") == "成功" else '<span style="color:#b91c1c; background:#fee2e2; padding:2px 8px; border-radius:4px; font-weight:bold;">异常</span>'
         status_badge_b = '<span style="color:#0f766e; background:#ccfbf1; padding:2px 8px; border-radius:4px; font-weight:bold;">成功</span>' if meta_b.get("status") == "成功" else '<span style="color:#d97706; background:#fef3c7; padding:2px 8px; border-radius:4px; font-weight:bold;">无新发布</span>'
 
