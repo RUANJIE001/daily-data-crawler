@@ -1,5 +1,5 @@
 """
-src/notifier.py - 增强版 SMTP 邮件发送模块（深度适配 Gmail/QQ/163 与 GitHub Actions 云环境）
+src/notifier.py - 增强版 SMTP 邮件发送模块（带底层 Debug 调试输出）
 """
 import os
 import smtplib
@@ -13,9 +13,15 @@ from src.utils import setup_logger, get_beijing_now
 
 logger = setup_logger("Notifier")
 
+def clean_value(val: str) -> str:
+    """清理字符串两端空白及常见误输入的引号"""
+    if not val:
+        return ""
+    v = val.strip().strip("'").strip('"')
+    return v
+
 def clean_host(host_str: str) -> str:
-    """清理 host 中可能误填的协议头或端口后缀"""
-    h = host_str.strip().replace("http://", "").replace("https://", "")
+    h = clean_value(host_str).replace("http://", "").replace("https://", "")
     if ":" in h:
         h = h.split(":")[0]
     return h.strip()
@@ -23,24 +29,20 @@ def clean_host(host_str: str) -> str:
 class EmailNotifier:
     def __init__(self):
         raw_host = os.getenv("EMAIL_HOST", "smtp.gmail.com")
-        self.smtp_host = clean_host(raw_host)
+        self.smtp_host = clean_host(raw_host) or "smtp.gmail.com"
         
-        raw_port = os.getenv("EMAIL_PORT", "465").strip()
+        raw_port = clean_value(os.getenv("EMAIL_PORT", "587"))
         try:
             self.smtp_port = int(raw_port)
         except Exception:
-            self.smtp_port = 465
+            self.smtp_port = 587
 
-        self.smtp_user = os.getenv("EMAIL_USER", "").strip()
-        # 自动清洗密码中的空格与不可见字符
-        self.auth_token = os.getenv("EMAIL_AUTH_TOKEN", "").strip().replace(" ", "").replace("\n", "").replace("\r", "")
-        self.receiver = os.getenv("EMAIL_RECEIVER", "181505217@qq.com").strip()
-        self.use_ssl = os.getenv("EMAIL_SSL", "true").lower() in ("true", "1", "yes")
+        self.smtp_user = clean_value(os.getenv("EMAIL_USER", ""))
+        self.auth_token = clean_value(os.getenv("EMAIL_AUTH_TOKEN", "")).replace(" ", "").replace("\n", "").replace("\r", "")
+        self.receiver = clean_value(os.getenv("EMAIL_RECEIVER", "181505217@qq.com"))
+        self.use_ssl = clean_value(os.getenv("EMAIL_SSL", "false")).lower() in ("true", "1", "yes")
 
     def send_report(self, excel_path: str, meta_a: Dict, meta_b: Dict) -> bool:
-        """
-        发送每日数据监测报表邮件
-        """
         if not self.smtp_user:
             logger.error("❌ 未检测到 EMAIL_USER 环境变量，请在 GitHub Secrets 中配置！")
             return False
@@ -49,8 +51,8 @@ class EmailNotifier:
             return False
 
         masked_user = self.smtp_user[:3] + "***" + self.smtp_user[self.smtp_user.find("@"):] if "@" in self.smtp_user else "***"
-        logger.info(f"📧 发件人账号: {masked_user}")
-        logger.info(f"📧 目标服务器: {self.smtp_host}")
+        logger.info(f"📧 发件人: {masked_user}")
+        logger.info(f"📧 目标 Host: '{self.smtp_host}'")
         logger.info(f"📧 授权码长度: {len(self.auth_token)} 位字符")
 
         now_str = get_beijing_now().strftime("%Y-%m-%d %H:%M:%S")
@@ -62,7 +64,7 @@ class EmailNotifier:
         msg["To"] = Header(self.receiver, "utf-8")
         msg["Subject"] = Header(subject, "utf-8")
 
-        # 1. 摘要 HTML
+        # 1. HTML 正文
         html_content = self._render_html_body(now_str, meta_a, meta_b)
         msg.attach(MIMEText(html_content, "html", "utf-8"))
 
@@ -77,44 +79,50 @@ class EmailNotifier:
             logger.warning(f"⚠️ 附件不存在: {excel_path}")
 
         receivers = [r.strip() for r in self.receiver.split(",") if r.strip()]
-
-        # 3. 准备 SSL Context (兼容现代 Linux Runner TLS 1.2/1.3)
         context = ssl.create_default_context()
 
-        # 组合模式：优先尝试 587 STARTTLS（云端最稳定），后尝试 465 SSL
-        modes = [
+        # 尝试通道列表（首选 587 STARTTLS，这是 Google 针对云服务器唯一官方保证支持的通道）
+        channels = [
             ("STARTTLS", self.smtp_host, 587),
-            ("SSL", self.smtp_host, 465),
-            ("STARTTLS", self.smtp_host, 25)
+            ("SSL", self.smtp_host, 465)
         ]
 
-        for mode_type, host, port in modes:
-            logger.info(f"🚀 正在尝试连接: {host}:{port} ({mode_type} 模式)...")
+        for mode_type, host, port in channels:
+            logger.info(f"🚀 发起连接 -> Host: {host}, Port: {port}, Mode: {mode_type}")
+            server = None
             try:
                 if mode_type == "SSL":
-                    with smtplib.SMTP_SSL(host, port, context=context, timeout=25) as server:
-                        server.ehlo()
-                        server.login(self.smtp_user, self.auth_token)
-                        server.sendmail(self.smtp_user, receivers, msg.as_string())
+                    server = smtplib.SMTP_SSL(host, port, context=context, timeout=30)
+                    server.set_debuglevel(1) # 打印底层通信日志
+                    server.ehlo()
+                    server.login(self.smtp_user, self.auth_token)
+                    server.sendmail(self.smtp_user, receivers, msg.as_string())
                 else:
-                    with smtplib.SMTP(host, port, timeout=25) as server:
-                        server.ehlo()
-                        server.starttls(context=context)
-                        server.ehlo()
-                        server.login(self.smtp_user, self.auth_token)
-                        server.sendmail(self.smtp_user, receivers, msg.as_string())
+                    server = smtplib.SMTP(host, port, timeout=30)
+                    server.set_debuglevel(1) # 打印底层通信日志
+                    server.ehlo()
+                    server.starttls(context=context)
+                    server.ehlo()
+                    server.login(self.smtp_user, self.auth_token)
+                    server.sendmail(self.smtp_user, receivers, msg.as_string())
 
                 logger.info(f"🎉 邮件发送成功！已成功投递至: {receivers}")
                 return True
 
             except smtplib.SMTPAuthenticationError as auth_err:
-                logger.error(f"❌ SMTP 认证失败: 用户名或应用专用密码不正确 -> {auth_err}")
-                logger.error("👉 提示：请确保在 Google 账号中开启了两步验证，并使用的是「应用专用密码」(16位)，而非普通登录密码。")
+                logger.error(f"❌ SMTP 认证失败 (密码错误): {auth_err}")
+                logger.error("👉 请确保使用的是 Google 生成的 16 位「应用专用密码」，而非账号普通密码。")
                 return False
             except Exception as e:
-                logger.warning(f"⚠️ 连接 {host}:{port} ({mode_type}) 失败: {e}，正在切换下一通道...")
+                logger.warning(f"⚠️ 模式 {mode_type} (端口 {port}) 异常: {e}")
+            finally:
+                if server:
+                    try:
+                        server.quit()
+                    except Exception:
+                        pass
 
-        logger.error("❌ 所有 SMTP 端口均无法连通。")
+        logger.error("❌ 所有 SMTP 连接方式均尝试失败！")
         return False
 
     def _render_html_body(self, run_time: str, meta_a: Dict, meta_b: Dict) -> str:
