@@ -129,8 +129,15 @@ class ExcelExporter:
                     if is_alt:
                         cell.fill = alt_fill
 
+                    col_header = str(ws.cell(row=header_row, column=col).value or "")
                     val_str = str(cell.value or "")
-                    if any(c in val_str for c in ["%", "元", "吨", "千克"]) or self._is_numeric(val_str):
+                    
+                    # 文本与名称列必须严格左对齐；单位居中；数值与涨跌右对齐
+                    if any(k in col_header for k in ["产品", "商品", "名称", "规格", "型号", "分类", "大类", "提示"]):
+                        cell.alignment = Alignment(horizontal="left", vertical="center")
+                    elif "单位" in col_header:
+                        cell.alignment = Alignment(horizontal="center", vertical="center")
+                    elif self._is_numeric(val_str):
                         cell.alignment = Alignment(horizontal="right", vertical="center")
                     else:
                         cell.alignment = Alignment(horizontal="left", vertical="center")
@@ -185,8 +192,10 @@ class ExcelExporter:
                     if is_alt:
                         cell.fill = alt_fill
 
+                    col_header = str(ws3.cell(row=header_row, column=col).value or "")
+                    val_str = str(cell.value or "")
+
                     # 涨跌幅特殊标红/标绿
-                    col_header = str(ws3.cell(row=header_row, column=col).value)
                     if "涨跌" in col_header:
                         try:
                             val_num = float(cell.value)
@@ -197,8 +206,12 @@ class ExcelExporter:
                         except Exception:
                             pass
 
-                    val_str = str(cell.value or "")
-                    if self._is_numeric(val_str):
+                    # 对齐策略
+                    if any(k in col_header for k in ["产品", "商品", "名称", "规格", "型号", "分类", "大类", "提示"]):
+                        cell.alignment = Alignment(horizontal="left", vertical="center")
+                    elif "单位" in col_header:
+                        cell.alignment = Alignment(horizontal="center", vertical="center")
+                    elif self._is_numeric(val_str):
                         cell.alignment = Alignment(horizontal="right", vertical="center")
                     else:
                         cell.alignment = Alignment(horizontal="left", vertical="center")
