@@ -178,12 +178,12 @@ class ExcelExporter:
                             elif trend_status == -1:
                                 cell.font = down_font
                     
-                    # 文本与名称列必须严格左对齐；单位居中；数值与涨跌右对齐
-                    if any(k in col_header for k in ["产品", "商品", "名称", "规格", "型号", "分类", "大类", "提示"]):
+                    # 对齐策略：文本严格左对齐；单位居中；所有价格/涨跌/涨幅/数值列（含 0 和 0.0）一律严格右对齐
+                    if any(k in col_header for k in ["产品", "商品", "名称", "规格", "型号", "分类", "大类", "提示", "来源"]):
                         cell.alignment = Alignment(horizontal="left", vertical="center")
                     elif "单位" in col_header:
                         cell.alignment = Alignment(horizontal="center", vertical="center")
-                    elif self._is_numeric(val_str):
+                    elif any(k in col_header for k in ["涨", "跌", "幅", "价", "额", "比", "旬", "日", "月", "期", "变动"]) or self._is_numeric(val_str):
                         cell.alignment = Alignment(horizontal="right", vertical="center")
                     else:
                         cell.alignment = Alignment(horizontal="left", vertical="center")
@@ -252,12 +252,12 @@ class ExcelExporter:
                         except Exception:
                             pass
 
-                    # 对齐策略
-                    if any(k in col_header for k in ["产品", "商品", "名称", "规格", "型号", "分类", "大类", "提示"]):
+                    # 对齐策略：文本严格左对齐；单位居中；所有价格/涨跌/涨幅/数值列（含 0 和 0.0）一律严格右对齐
+                    if any(k in col_header for k in ["产品", "商品", "名称", "规格", "型号", "分类", "大类", "提示", "来源"]):
                         cell.alignment = Alignment(horizontal="left", vertical="center")
                     elif "单位" in col_header:
                         cell.alignment = Alignment(horizontal="center", vertical="center")
-                    elif self._is_numeric(val_str):
+                    elif any(k in col_header for k in ["涨", "跌", "幅", "价", "额", "比", "旬", "日", "月", "期", "变动"]) or self._is_numeric(val_str):
                         cell.alignment = Alignment(horizontal="right", vertical="center")
                     else:
                         cell.alignment = Alignment(horizontal="left", vertical="center")
