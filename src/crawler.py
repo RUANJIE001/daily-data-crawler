@@ -179,6 +179,9 @@ class CommodityCrawler:
             meta["detail"] = "所有公告详情解析均未获取到有效表格数据"
             return pd.DataFrame(), pd.DataFrame(), [], meta
 
+        # 最近一期作为 Sheet 2 的主要数据
+        latest_short_name, latest_df = parsed_issues[0]
+
         # 3. 构建过去 10 次的趋势透视矩阵 (Sheet 3) - 采用时间倒序排列（最新期在最左侧）
         trend_matrix_df, period_headers = self._build_trend_matrix(parsed_issues)
 
