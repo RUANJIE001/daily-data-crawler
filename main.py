@@ -16,35 +16,44 @@ def main():
     logger.info("=" * 60)
 
     try:
-        # 1. 抓取数据
         crawler = CommodityCrawler()
         
+        # 1. 抓取站点 A (生意社)
         df_a, meta_a = crawler.fetch_site_a_100ppi()
-        df_b, meta_b = crawler.fetch_site_b_stats_gov()
 
-        # 2. 导出 Excel 报表
+        # 2. 抓取站点 B (国家统计局数据发布 - 过去 10 期生产资料价格变动)
+        df_b_latest, df_b_trend, period_headers, meta_b = crawler.fetch_site_b_stats_gov_history(
+            base_url="https://www.stats.gov.cn/sj/zxfb/",
+            max_issues=10
+        )
+
+        # 3. 导出 3-Sheet Excel 报表与原生趋势折线图
         exporter = ExcelExporter(output_dir="./reports")
         report_path = exporter.generate_daily_report(
             site_a_df=df_a,
             site_a_meta=meta_a,
-            site_b_df=df_b,
+            site_b_latest_df=df_b_latest,
+            site_b_trend_df=df_b_trend,
+            period_headers=period_headers,
             site_b_meta=meta_b
         )
 
-        # 3. 邮件发送
+        # 4. 发送带 3-Sheet 报表的邮件
         notifier = EmailNotifier()
         send_success = notifier.send_report(
             excel_path=report_path,
             meta_a=meta_a,
-            meta_b=meta_b
+            meta_b=meta_b,
+            period_headers=period_headers
         )
 
-        # 4. 执行总结
+        # 5. 执行总结
         elapsed = (get_beijing_now() - start_time).total_seconds()
         logger.info("=" * 60)
         logger.info(f"✅ 任务全流程执行完成，耗时: {elapsed:.2f} 秒")
         logger.info(f"📊 站点 A (生意社): {meta_a['status']} ({meta_a['row_count']} 行)")
-        logger.info(f"📊 站点 B (统计局): {meta_b['status']} ({meta_b['row_count']} 行)")
+        logger.info(f"📊 站点 B (统计局最新): {meta_b['status']} ({len(df_b_latest)} 行)")
+        logger.info(f"📈 站点 B (历史趋势): 采集 {len(period_headers)} 期，构建 {len(df_b_trend)} 项商品走势图")
         logger.info(f"📧 邮件推送状态: {'成功' if send_success else '失败'}")
         logger.info("=" * 60)
 
