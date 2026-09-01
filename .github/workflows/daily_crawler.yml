@@ -1,0 +1,46 @@
+name: Daily Commodity Price Crawler & Notifier
+
+on:
+  schedule:
+    # 北京时间每天 07:00 (UTC 23:00) 自动触发
+    - cron: '0 23 * * *'
+  workflow_dispatch: # 支持在 GitHub 仓库网页端随时手动点击 "Run workflow" 测试
+
+jobs:
+  scrape-and-notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Crawler & Send Email
+        env:
+          EMAIL_HOST: ${{ secrets.EMAIL_HOST }}
+          EMAIL_PORT: ${{ secrets.EMAIL_PORT }}
+          EMAIL_USER: ${{ secrets.EMAIL_USER }}
+          EMAIL_AUTH_TOKEN: ${{ secrets.EMAIL_AUTH_TOKEN }}
+          EMAIL_RECEIVER: ${{ secrets.EMAIL_RECEIVER }}
+          EMAIL_SSL: ${{ secrets.EMAIL_SSL }}
+        run: |
+          python main.py
+
+      - name: Upload Daily Report Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Daily_Report_Backup_${{ github.run_id }}
+          path: reports/*.xlsx
+          retention-days: 14
