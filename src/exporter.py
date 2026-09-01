@@ -8,6 +8,7 @@ from openpyxl import load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.chart import LineChart, Reference
+from openpyxl.chart.series import SeriesLabel
 from src.utils import setup_logger, get_beijing_now
 
 logger = setup_logger("Exporter")
@@ -282,10 +283,11 @@ class ExcelExporter:
             chart.add_data(data, from_rows=True, titles_from_data=False)
             chart.set_categories(x_values)
 
-            # 使用 Reference 绑定每条折线的系列标题（直接链接到产品名称单元格，符合 openpyxl 规范）
+            # 使用 SeriesLabel 绑定每条折线的系列标题（openpyxl 规范类型）
             for s_idx, series in enumerate(chart.series):
                 series_row = min_r + s_idx
-                series.title = Reference(ws, min_col=col_product, min_row=series_row)
+                product_name = str(ws.cell(row=series_row, column=col_product).value or f"商品{s_idx+1}")
+                series.tx = SeriesLabel(v=product_name)
                 series.marker.symbol = "circle"
                 series.marker.size = 4
                 series.smooth = True
