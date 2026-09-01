@@ -179,13 +179,8 @@ class CommodityCrawler:
             meta["detail"] = "所有公告详情解析均未获取到有效表格数据"
             return pd.DataFrame(), pd.DataFrame(), [], meta
 
-        # 最近一期作为 Sheet 2 的主要数据
-        latest_short_name, latest_df = parsed_issues[0]
-
-        # 3. 构建过去 10 次的趋势透视矩阵 (Sheet 3)
-        # 将期数按时间从前到后排序（早期 -> 最新期），便于图表从左往右展示趋势
-        chronological_issues = list(reversed(parsed_issues))
-        trend_matrix_df, period_headers = self._build_trend_matrix(chronological_issues)
+        # 3. 构建过去 10 次的趋势透视矩阵 (Sheet 3) - 采用时间倒序排列（最新期在最左侧）
+        trend_matrix_df, period_headers = self._build_trend_matrix(parsed_issues)
 
         meta["status"] = "成功"
         meta["detail"] = f"成功采集过去 {len(parsed_issues)} 次价格发布，并生成 {len(trend_matrix_df)} 项商品趋势矩阵"
@@ -313,12 +308,12 @@ class CommodityCrawler:
                 if p is not None:
                     prices.append(p)
 
-            # 计算 10 期总涨跌额与总涨跌幅
-            if len(prices) >= 2 and prices[0] > 0:
-                first_p = prices[0]
-                last_p = prices[-1]
-                diff_total = round(last_p - first_p, 2)
-                rate_total = round((last_p - first_p) / first_p * 100, 2)
+            # 计算 10 期总涨跌额与总涨跌幅 (最新期 prices[0] 对比 最早一期 prices[-1])
+            if len(prices) >= 2 and prices[-1] > 0:
+                newest_p = prices[0]
+                oldest_p = prices[-1]
+                diff_total = round(newest_p - oldest_p, 2)
+                rate_total = round((newest_p - oldest_p) / oldest_p * 100, 2)
             else:
                 diff_total = 0.0
                 rate_total = 0.0

@@ -273,10 +273,20 @@ class ExcelExporter:
             chart = LineChart()
             chart.title = f"{cat_name} - 细项价格过去 {len(period_headers)} 期走势 (单位: 元)"
             chart.style = 13
-            chart.y_axis.title = "价格 (元)"
-            chart.x_axis.title = "期数"
             chart.width = 19
             chart.height = 10
+
+            # 核心修复：明确指定 X 轴置于底部(bottom)、Y 轴置于左侧(left)
+            chart.x_axis.axPos = "b"
+            chart.y_axis.axPos = "l"
+            chart.x_axis.tickLblPos = "low"
+            chart.y_axis.tickLblPos = "low"
+            chart.x_axis.crosses = "autoZero"
+            chart.y_axis.crosses = "autoZero"
+            chart.x_axis.title = "发布期数"
+            chart.y_axis.title = "价格 (元)"
+            if chart.legend:
+                chart.legend.legendPos = "r"
 
             # 数据引用：该分类下所有商品行的价格数据
             data = Reference(ws, min_col=col_period_start, max_col=col_period_end, min_row=min_r, max_row=max_r)
