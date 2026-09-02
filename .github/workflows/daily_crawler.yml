@@ -2,8 +2,8 @@ name: Daily Commodity Price Crawler & Notifier
 
 on:
   schedule:
-    # 北京时间每天 06:38 (UTC 22:38) 自动触发，避开整点高峰秒级执行
-    - cron: '38 22 * * *'
+    # 测试：北京时间 08:59 (UTC 00:59) 自动触发
+    - cron: '59 0 * * *'
   workflow_dispatch: # 支持在 GitHub 仓库网页端随时手动点击 "Run workflow" 测试
 
 jobs:
