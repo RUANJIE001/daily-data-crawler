@@ -2,9 +2,19 @@ name: Daily Commodity Price Crawler & Notifier
 
 on:
   schedule:
-    # 北京时间每天 06:38 (UTC 22:38) 自动触发，避开整点高峰秒级执行
+    # 兜底双轨调度：北京时间每天 06:38 (UTC 22:38)
     - cron: '38 22 * * *'
-  workflow_dispatch: # 支持在 GitHub 仓库网页端随时手动点击 "Run workflow" 测试
+  workflow_dispatch: # 远程 API / 手动即时秒级触发
+    inputs:
+      trigger_source:
+        description: '触发来源 (如 vps-cron / local / manual)'
+        required: false
+        default: 'manual'
+
+# 任务排队互斥锁：防止外部调度与 GitHub 定时同时触发造成重复推送
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   scrape-and-notify:
