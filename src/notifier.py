@@ -39,6 +39,22 @@ class EmailNotifier:
         self.auth_token = clean_value(os.getenv("EMAIL_AUTH_TOKEN", "")).replace(" ", "").replace("\n", "").replace("\r", "")
         self.receiver = clean_value(os.getenv("EMAIL_RECEIVER", "181505217@qq.com"))
 
+    def _parse_receivers(self, raw_str: str) -> List[str]:
+        """解析并清洗多收件人列表，兼容中英文逗号、分号、换行及空格分隔"""
+        if not raw_str:
+            return []
+        normalized = raw_str.replace("，", ",").replace(";", ",").replace("；", ",").replace("\n", ",").replace("\r", ",")
+        parts = [p.strip() for p in normalized.split(",") if p.strip()]
+        
+        cleaned = []
+        for p in parts:
+            for item in p.split():
+                item = item.strip()
+                if "@" in item and "." in item:
+                    if item not in cleaned:
+                        cleaned.append(item)
+        return cleaned
+
     def send_report(
         self,
         excel_path: str,
@@ -54,9 +70,15 @@ class EmailNotifier:
             logger.error("❌ 未检测到 EMAIL_AUTH_TOKEN 环境变量，请在 GitHub Secrets 中配置！")
             return False
 
+        receivers = self._parse_receivers(self.receiver)
+        if not receivers:
+            logger.error("❌ 未指定任何有效的收件人邮箱，请检查 EMAIL_RECEIVER 配置！")
+            return False
+
         masked_user = self.smtp_user[:3] + "***" + self.smtp_user[self.smtp_user.find("@"):] if "@" in self.smtp_user else "***"
         logger.info(f"📧 发件人: {masked_user}")
         logger.info(f"📧 目标 Host: '{self.smtp_host}'")
+        logger.info(f"📧 目标收件人 ({len(receivers)} 位): {', '.join(receivers)}")
 
         now_str = get_beijing_now().strftime("%Y-%m-%d %H:%M:%S")
         date_str = get_beijing_now().strftime("%Y%m%d")
@@ -68,7 +90,7 @@ class EmailNotifier:
 
         msg = MIMEMultipart("mixed")
         msg["From"] = Header(f"自动化数据机器人 <{self.smtp_user}>", "utf-8")
-        msg["To"] = Header(self.receiver, "utf-8")
+        msg["To"] = Header(", ".join(receivers), "utf-8")
         msg["Subject"] = Header(subject, "utf-8")
 
         # 1. HTML 正文
@@ -91,7 +113,6 @@ class EmailNotifier:
         else:
             logger.warning(f"⚠️ 附件不存在: {excel_path}")
 
-        receivers = [r.strip() for r in self.receiver.split(",") if r.strip()]
         context = ssl.create_default_context()
 
         # 通道列表：优先 587 STARTTLS，后备 465 SSL
@@ -119,7 +140,7 @@ class EmailNotifier:
                     server.login(self.smtp_user, self.auth_token)
                     server.sendmail(self.smtp_user, receivers, msg.as_string())
 
-                logger.info(f"🎉 邮件发送成功！已投递至: {receivers}")
+                logger.info(f"🎉 邮件发送成功！已成功批量投递至 {len(receivers)} 个邮箱: {receivers}")
                 return True
 
             except smtplib.SMTPAuthenticationError as auth_err:
