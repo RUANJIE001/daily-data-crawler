@@ -22,40 +22,50 @@ class ExcelExporter:
         self,
         site_a_df: pd.DataFrame,
         site_a_meta: Dict,
-        site_b_latest_df: pd.DataFrame,
-        site_b_trend_df: pd.DataFrame,
-        period_headers: List[str],
-        site_b_meta: Dict
+        site_b_latest_df: Optional[pd.DataFrame] = None,
+        site_b_trend_df: Optional[pd.DataFrame] = None,
+        period_headers: Optional[List[str]] = None,
+        site_b_meta: Optional[Dict] = None,
+        is_weekly_report: bool = False
     ) -> str:
         """
-        生成命名为 Daily_Report_YYYYMMDD.xlsx 的 3-Sheet 专业分析报表
-        Sheet 1: 生意社大宗商品监测
-        Sheet 2: 统计局重要生产资料价格(最新)
-        Sheet 3: 生产资料价格走势(近10次) [含各细项趋势图表]
+        生成 Excel 分析报表：
+        - 常规每日（周二至周日）：仅生成 Sheet 1 (生意社大宗商品监测)
+        - 周一深度版：生成 3 个 Sheet (Sheet 1 生意社 + Sheet 2 统计局最新 + Sheet 3 统计局10期走势与趋势图)
         """
         today_str = get_beijing_now().strftime("%Y%m%d")
         file_name = f"Daily_Report_{today_str}.xlsx"
         file_path = os.path.join(self.output_dir, file_name)
         
-        logger.info(f"准备生成 3-Sheet 每日 Excel 分析报表: {file_path}")
+        sheet_count_desc = "3-Sheet (周一深度版)" if is_weekly_report else "1-Sheet (每日监测版)"
+        logger.info(f"准备生成 {sheet_count_desc} Excel 分析报表: {file_path}")
 
         with pd.ExcelWriter(file_path, engine="openpyxl") as writer:
-            # Sheet 1: 站点 A 数据
+            # Sheet 1: 站点 A 数据 (每天必有)
             df_a = site_a_df if not site_a_df.empty else pd.DataFrame({"提示": ["今日未获取到有效数据或页面正在安全检查"]})
             df_a.to_excel(writer, sheet_name="生意社大宗商品监测", index=False, startrow=3)
 
-            # Sheet 2: 站点 B 最新一期
-            df_b = site_b_latest_df if not site_b_latest_df.empty else pd.DataFrame({"提示": ["统计局暂无新一期流通领域生产资料价格发布"]})
-            df_b.to_excel(writer, sheet_name="统计局生产资料(最新期)", index=False, startrow=3)
+            # 仅在周一深度版中生成 Sheet 2 与 Sheet 3
+            if is_weekly_report:
+                # Sheet 2: 站点 B 最新一期
+                df_b = site_b_latest_df if (site_b_latest_df is not None and not site_b_latest_df.empty) else pd.DataFrame({"提示": ["统计局暂无新一期流通领域生产资料价格发布"]})
+                df_b.to_excel(writer, sheet_name="统计局生产资料(最新期)", index=False, startrow=3)
 
-            # Sheet 3: 过去 10 次价格走势矩阵
-            df_trend = site_b_trend_df if not site_b_trend_df.empty else pd.DataFrame({"提示": ["未获取到过去多期历史数据"]})
-            df_trend.to_excel(writer, sheet_name="生产资料走势(近10次)", index=False, startrow=3)
+                # Sheet 3: 过去 10 次价格走势矩阵
+                df_trend = site_b_trend_df if (site_b_trend_df is not None and not site_b_trend_df.empty) else pd.DataFrame({"提示": ["未获取到过去多期历史数据"]})
+                df_trend.to_excel(writer, sheet_name="生产资料走势(近10次)", index=False, startrow=3)
 
         # 进行单元格美化排版与原生趋势图表绘制
-        self._apply_styling_and_charts(file_path, site_a_meta, site_b_meta, period_headers, site_b_trend_df)
+        self._apply_styling_and_charts(
+            file_path,
+            site_a_meta,
+            site_b_meta or {},
+            period_headers or [],
+            site_b_trend_df if site_b_trend_df is not None else pd.DataFrame(),
+            is_weekly_report=is_weekly_report
+        )
         
-        logger.info(f"🎉 3-Sheet 报表生成完毕，包含原生趋势图: {file_path}")
+        logger.info(f"🎉 {sheet_count_desc} 报表生成完毕: {file_path}")
         return file_path
 
     def _apply_styling_and_charts(
@@ -64,7 +74,8 @@ class ExcelExporter:
         meta_a: Dict,
         meta_b: Dict,
         period_headers: List[str],
-        trend_df: pd.DataFrame
+        trend_df: pd.DataFrame,
+        is_weekly_report: bool = False
     ):
         wb = load_workbook(file_path)
 

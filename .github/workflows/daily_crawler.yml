@@ -7,6 +7,11 @@ on:
         description: '触发来源 (如 vps-cron / local / manual)'
         required: false
         default: 'vps-cron'
+      force_site_b:
+        description: '是否强制抓取站点B统计局10期数据 (仅周一默认开启)'
+        type: boolean
+        required: false
+        default: false
 
 # 任务排队互斥锁：防止偶发重复触发堆叠
 concurrency:
@@ -42,7 +47,11 @@ jobs:
           EMAIL_RECEIVER: ${{ secrets.EMAIL_RECEIVER }}
           EMAIL_SSL: ${{ secrets.EMAIL_SSL }}
         run: |
-          python main.py
+          if [ "${{ inputs.force_site_b }}" = "true" ]; then
+            python main.py --force-site-b
+          else
+            python main.py
+          fi
 
       - name: Upload Daily Report Artifact
         if: always()
