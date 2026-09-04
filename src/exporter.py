@@ -212,6 +212,36 @@ class ExcelExporter:
                         max_len = max(max_len, width)
                 ws.column_dimensions[col_letter].width = max(max_len + 4, 12)
 
+            # ---------------------------------------------------------
+            # 针对 Sheet 1 (生意社大宗商品监测) 的专项定制：
+            # 1. 冻结商品名称列与表头 (横向滚动保留商品名称，纵向滚动保留表头)
+            # 2. 将「参考规格」列宽设为与「商品名称」列宽完全一致
+            # ---------------------------------------------------------
+            if sheet_name == "生意社大宗商品监测":
+                col_product_idx = None
+                col_spec_idx = None
+
+                for c in range(1, max_col + 1):
+                    h = str(ws.cell(row=header_row, column=c).value or "")
+                    if any(k in h for k in ["商品名称", "商品", "产品名称", "产品"]):
+                        if col_product_idx is None:
+                            col_product_idx = c
+                    elif any(k in h for k in ["参考规格", "规格", "型号"]):
+                        if col_spec_idx is None:
+                            col_spec_idx = c
+
+                # 1. 冻结商品名称列及上方表头
+                if col_product_idx is not None:
+                    next_col_letter = get_column_letter(col_product_idx + 1)
+                    ws.freeze_panes = f"{next_col_letter}{header_row + 1}"
+
+                # 2. 将「参考规格」列宽同步设为与「商品名称」列宽一致
+                if col_product_idx is not None and col_spec_idx is not None:
+                    prod_letter = get_column_letter(col_product_idx)
+                    spec_letter = get_column_letter(col_spec_idx)
+                    product_width = ws.column_dimensions[prod_letter].width
+                    ws.column_dimensions[spec_letter].width = product_width
+
         # -------------------------------------------------------------
         # 2. 格式化 Sheet 3 并绘制趋势图表 (LineChart)
         # -------------------------------------------------------------
@@ -285,6 +315,9 @@ class ExcelExporter:
                         width = sum(2 if ord(c) > 127 else 1 for c in val_str)
                         max_len = max(max_len, width)
                 ws3.column_dimensions[col_letter].width = max(max_len + 4, 12)
+
+            # 冻结左侧 4 列基础信息（分类大类、产品名称、规格、单位）与表头，横向滚动查看多期价格时商品名称固定
+            ws3.freeze_panes = "E5"
 
             # -------------------------------------------------------------
             # 3. 绘制每个分类大类及重点商品的趋势折线图 (Native Excel Charts)
