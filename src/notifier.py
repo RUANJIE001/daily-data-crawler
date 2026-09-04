@@ -8,7 +8,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 from email.header import Header
-from typing import Dict, List
+from typing import Dict, List, Optional, Any
 from src.utils import setup_logger, get_beijing_now
 
 logger = setup_logger("Notifier")

@@ -2,7 +2,7 @@
 src/exporter.py - Excel 3-Sheet 报表导出与专业趋势图表绘制
 """
 import os
-from typing import Dict, List
+from typing import Dict, List, Optional, Any
 import pandas as pd
 from openpyxl import load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
